@@ -1,0 +1,401 @@
+// Prisma schema - SEAGULL RECORDS
+// Sistema de Gestión Integral para Estudio de Producción Musical
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ CONFIGURACIÓN DE LA EMPRESA ============
+
+model Config {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  value           String
+  updatedAt       DateTime @updatedAt
+}
+
+// ============ USUARIOS DEL SISTEMA ============
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  name            String
+  avatar          String?
+  role            String   @default("ADMIN") // ADMIN | PRODUCTOR | A&R | CONTABILIDAD | CLIENTE
+  contactoId      String?  @unique // si el rol es CLIENTE, enlace al contacto
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contacto        Contacto? @relation(fields: [contactoId], references: [id])
+  tareasAsignadas Tarea[]
+  registrosAsistencia RegistroAsistencia[]
+}
+
+// ============ CONTACTOS (CRM) ============
+
+model Contacto {
+  id              String   @id @default(cuid())
+  codigo          String   @unique // C-2025-001, B-2026-001, S-2026-001
+  nombre          String
+  dniRuc          String?
+  email           String?
+  emailAlterno    String?
+  telefono        String?
+  avatar          String?  // URL de la foto del contacto
+  tipo            String   @default("SOLISTA") // SOLISTA | BANDA | MANAGER | PRODUCTOR | SELLO | MANAGER
+  origen          String?  // Migración | Referido | Web | Redes
+  estado          String   @default("ACTIVO") // ACTIVO | INACTIVO | COTIZACION_ENVIADA | CLIENTE_ACTIVO | PROSPECTO
+  estadoContractual String?
+  fechaRegistro   DateTime @default(now())
+  observaciones   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User?
+  cotizaciones    Cotizacion[]
+  proyectos       Proyecto[]
+  contratos       Contrato[]
+  ingresos        Ingreso[]
+  actividades     Actividad[]
+  eventos         Evento[]
+}
+
+// ============ SERVICIOS ============
+
+model Servicio {
+  id              String   @id @default(cuid())
+  codigo          String   @unique // SRV-001
+  nombre          String
+  descripcion     String?
+  unidad          String   // Hora | Canción | Proyecto | Sesión
+  precioBase      Float    // en Soles
+  igv             Float    @default(0.18) // 18%
+  tiempoEstimado  String?  // "1 hora", "3 días", "20 días"
+  activo          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  cotizacionItems CotizacionItem[]
+}
+
+// ============ COTIZACIONES ============
+
+model Cotizacion {
+  id              String   @id @default(cuid())
+  codigo          String   @unique // COT-2026-001
+  contactoId      String
+  nombreCliente   String
+  fechaEmision    DateTime @default(now())
+  fechaVencimiento DateTime?
+  subtotal        Float    @default(0)
+  igv             Float    @default(0)
+  total           Float    @default(0)
+  estado          String   @default("BORRADOR") // BORRADOR | ENVIADA | APROBADA | RECHAZADA | VENCIDA | CONVERTIDA_PROYECTO
+  proyectoVinculado String?
+  creadoPor       String?
+  urlPdf          String?
+  urlCarpeta      String?
+  observaciones   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contacto        Contacto @relation(fields: [contactoId], references: [id])
+  items           CotizacionItem[]
+  proyecto        Proyecto?
+}
+
+model CotizacionItem {
+  id              String   @id @default(cuid())
+  cotizacionId    String
+  servicioId      String?
+  descripcion     String
+  cantidad        Float    @default(1)
+  unidad          String?  // Hora | Canción | Sesión
+  precioUnitario  Float
+  descuento       Float    @default(0)
+  subtotal        Float
+  createdAt       DateTime @default(now())
+
+  cotizacion      Cotizacion @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+  servicio        Servicio?  @relation(fields: [servicioId], references: [id])
+}
+
+// ============ PROYECTOS ============
+
+model Proyecto {
+  id              String   @id @default(cuid())
+  codigo          String   @unique // PRY-2026-001
+  contactoId      String
+  nombreArtista   String
+  nombreProyecto  String
+  tipoProyecto    String   // Producción Musical | Masterización | Mezcla | Producción Completa
+  cotizacionId    String?  @unique
+  estadoFlujo     String   @default("PREPRODUCCION") // PREPRODUCCION | GRABACION | EDICION | MEZCLA | MASTERIZACION | REVISION | ENTREGA | FINALIZADO
+  estadoGeneral   String   @default("ACTIVO") // ACTIVO | PAUSADO | CANCELADO | ENTREGADO
+  fechaInicio     DateTime?
+  fechaEntregaEstimada DateTime?
+  fechaEntregaReal DateTime?
+  responsable     String?  // Martha | Aarón | Caleb | Oseías
+  urlCarpetaDrive String?
+  urlAppSheet     String?
+  observaciones   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contacto        Contacto @relation(fields: [contactoId], references: [id])
+  cotizacion      Cotizacion? @relation(fields: [cotizacionId], references: [id])
+  tareas          Tarea[]
+  contratos       Contrato[]
+  actividades     Actividad[]
+  eventos         Evento[]
+  ingresos        Ingreso[]
+  prestamos       Prestamo[]
+}
+
+// ============ TAREAS ============
+
+model Tarea {
+  id              String   @id @default(cuid())
+  codigo          String   @unique // TAR-005-01
+  proyectoId      String
+  nombre          String
+  etapa           String   // Preproducción | Grabación | Edición | Mezcla | Masterización | Revisión | Entrega
+  responsable     String?  // Martha | Aarón | Caleb | Oseías
+  responsableId   String?
+  fechaLimite     DateTime?
+  fechaCompletada DateTime?
+  estado          String   @default("PENDIENTE") // PENDIENTE | EN_PROGRESO | COMPLETADA | CANCELADA
+  prioridad       String   @default("ALTA") // ALTA | MEDIA | BAJA | URGENTE
+  observaciones   String?
+  orden           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  proyecto        Proyecto @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
+  responsable_user User?   @relation(fields: [responsableId], references: [id])
+}
+
+// ============ CONTRATOS ============
+
+model Contrato {
+  id              String   @id @default(cuid())
+  codigo          String   @unique // CTR-2026-001
+  proyectoId      String?
+  contactoId      String
+  nombreArtista   String
+  nombreProyecto  String
+  tipoContrato    String   // EP | Sencillo | Producción Completa | Mezcla y Masterización
+  fechaCreacion   DateTime @default(now())
+  fechaFirma      DateTime?
+  montoTotal      Float    @default(0)  // en Soles
+  anticipo        Float    @default(0)
+  saldoPendiente   Float    @default(0)
+  estado          String   @default("BORRADOR") // BORRADOR | FIRMADO | ARCHIVADO | ANULADO
+  urlDocumento    String?
+  urlCarpeta      String?
+  observaciones   String?
+  fechaVigencia   DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contacto        Contacto @relation(fields: [contactoId], references: [id])
+  proyecto        Proyecto? @relation(fields: [proyectoId], references: [id])
+}
+
+// ============ FINANZAS ============
+
+model Ingreso {
+  id              String   @id @default(cuid())
+  codigo          String   @unique // ING-2026-001
+  contactoId      String?
+  proyectoId      String?
+  concepto        String
+  monto           Float    // en Soles
+  fecha           DateTime @default(now())
+  metodo          String?  // Efectivo | Transferencia | Yape | Plin | Tarjeta
+  comprobante     String?  // Boleta | Factura | Recibo
+  numeroComprobante String?
+  estado          String   @default("CONFIRMADO") // PENDIENTE | CONFIRMADO | ANULADO
+  observaciones   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contacto        Contacto? @relation(fields: [contactoId], references: [id])
+  proyecto        Proyecto? @relation(fields: [proyectoId], references: [id])
+}
+
+model Egreso {
+  id              String   @id @default(cuid())
+  codigo          String   @unique // EGR-2026-001
+  categoria       String   // SERVICIOS | EQUIPO | SOFTWARE | PERSONAL | MARKETING | ADMIN | RENTA | OTROS
+  concepto        String
+  monto           Float    // en Soles
+  fecha           DateTime @default(now())
+  proveedor       String?
+  metodo          String?  // Efectivo | Transferencia | Yape | Plin | Tarjeta
+  comprobante     String?  // Boleta | Factura | Recibo
+  numeroComprobante String?
+  estado          String   @default("CONFIRMADO") // PENDIENTE | CONFIRMADO | ANULADO
+  observaciones   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============ AGENDA / EVENTOS ============
+
+model Evento {
+  id              String   @id @default(cuid())
+  titulo          String
+  descripcion     String?
+  fechaInicio     DateTime
+  fechaFin        DateTime?
+  tipo            String   // SESION_GRABACION | REUNION | ENTREGA | PAGO | OTRO
+  contactoId      String?
+  proyectoId      String?
+  estado          String   @default("PROGRAMADO") // PROGRAMADO | CONFIRMADO | COMPLETADO | CANCELADO
+  ubicacion       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contacto        Contacto? @relation(fields: [contactoId], references: [id])
+  proyecto        Proyecto? @relation(fields: [proyectoId], references: [id])
+}
+
+// ============ INTEGRACIONES GOOGLE ============
+
+model GoogleIntegration {
+  id              String   @id @default(cuid())
+  service         String   @unique // DRIVE | CALENDAR | GMAIL | DOCS | SHEETS | LOOKER
+  status          String   @default("CONNECTED") // CONNECTED | DISCONNECTED | ERROR
+  accountId       String?
+  lastSync        DateTime?
+  metadata        String?  // JSON
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============ ACTIVIDAD ============
+
+model Actividad {
+  id              String   @id @default(cuid())
+  tipo            String   // COTIZACION | PROYECTO | CONTRATO | FINANZA | TAREA | NOTA | MILESTONE
+  contactoId      String?
+  proyectoId      String?
+  titulo          String
+  descripcion     String?
+  severidad       String   @default("INFO") // INFO | WARNING | SUCCESS | URGENT
+  metadata        String?
+  createdAt       DateTime @default(now())
+
+  contacto        Contacto? @relation(fields: [contactoId], references: [id])
+  proyecto        Proyecto? @relation(fields: [proyectoId], references: [id])
+}
+
+// ============ INVENTARIO ============
+
+model InventarioItem {
+  id              String   @id @default(cuid())
+  codigo          String   @unique // INV-001
+  nombre          String
+  categoria       String   // MICROFONO | CABLE | INTERFACE | INSTRUMENTO | MONITOR | ACCESORIO | OTRO
+  marca           String?
+  modelo          String?
+  numeroSerie     String?
+  estado          String   @default("DISPONIBLE") // DISPONIBLE | EN_USO | PRESTADO | EN_REPARACION | BAJA
+  ubicacion       String?  // Estudio A, Estudio B, Sala Ensayo, Almacén
+  fechaAdquisicion DateTime?
+  valorCompra     Float?
+  notas           String?
+  imagen          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  prestamos       Prestamo[]
+  mantenimientos  Mantenimiento[]
+}
+
+model Prestamo {
+  id              String   @id @default(cuid())
+  itemId          String
+  prestadoA       String   // persona o proyecto
+  proyectoId      String?
+  fechaPrestamo   DateTime @default(now())
+  fechaDevolucionEsperada DateTime?
+  fechaDevolucion DateTime?
+  estado          String   @default("ACTIVO") // ACTIVO | DEVUELTO | PERDIDO
+  notas           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  item            InventarioItem @relation(fields: [itemId], references: [id])
+  proyecto        Proyecto? @relation(fields: [proyectoId], references: [id])
+}
+
+model Mantenimiento {
+  id              String   @id @default(cuid())
+  itemId          String
+  tipo            String   // PREVENTIVO | CORRECTIVO | LIMPIEZA | CALIBRACION
+  descripcion     String
+  fechaInicio     DateTime @default(now())
+  fechaFin        DateTime?
+  costo           Float    @default(0)
+  proveedor       String?
+  estado          String   @default("PROGRAMADO") // PROGRAMADO | EN_PROCESO | COMPLETADO
+  notas           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  item            InventarioItem @relation(fields: [itemId], references: [id])
+}
+
+// ============ ASISTENCIA ============
+
+model RegistroAsistencia {
+  id              String   @id @default(cuid())
+  userId          String
+  fecha           DateTime @default(now())
+  checkIn         DateTime?
+  checkOut        DateTime?
+  horasTrabajadas Float    @default(0)
+  estado          String   @default("PENDIENTE") // PENDIENTE | ACTIVO | COMPLETADO | AUSENTE
+  observaciones   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User @relation(fields: [userId], references: [id])
+}
+
+// ============ INFORMES MENSUALES ============
+
+model InformeMensual {
+  id              String   @id @default(cuid())
+  mes             Int      // 1-12
+  anio            Int
+  datosJson       String   // snapshot completo de métricas del mes
+  pdfUrl          String?  // URL del PDF generado
+  estado          String   @default("GENERADO") // GENERADO | ENVIADO_EMAIL | ENVIADO_TELEGRAM
+  enviadoA        String?  // lista de emails/chatIds separados por coma
+  fechaEnvio      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([mes, anio])
+}
+
+// ============ CREDENCIALES DE INTEGRACIONES ============
+
+model Credencial {
+  id              String   @id @default(cuid())
+  servicio        String   @unique // GOOGLE_OAUTH | TELEGRAM_BOT | GMAIL
+  datos           String   // JSON con client_id, secret, token, etc.
+  activo          Boolean  @default(true)
+  ultimaConexion  DateTime?
+  notas           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
